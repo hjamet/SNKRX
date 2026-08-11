@@ -2137,7 +2137,7 @@ end
 
 function love.run()
   return engine_run({
-    game_name = 'SNKRX',
+    game_name = 'SNKRX_mod',
     window_width = 'max',
     window_height = 'max',
   })

@@ -1,2 +1,6 @@
 steam/
 builds/
+bin/
+run_log.txt
+/luasteam.dll
+/steam_api64.dll

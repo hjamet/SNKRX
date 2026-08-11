@@ -969,19 +969,8 @@ function RerollButton:init(args)
     self.text = Text({{text = '[bg10]reroll: [yellow]2', font = pixul_font, alignment = 'center'}}, global_text_tags)
   elseif self.parent:is(Arena) then
     self.shape = Rectangle(self.x, self.y, 60, 16)
-    local merchant
-    for _, unit in ipairs(self.parent.starting_units) do
-      if unit.character == 'merchant' then
-        merchant = unit
-        break
-      end
-    end
-    if self.parent.level == 3 or (merchant and merchant.level == 3) then
-      self.free_reroll = true
-      self.text = Text({{text = '[bg10]reroll: [yellow]0', font = pixul_font, alignment = 'center'}}, global_text_tags)
-    else
-      self.text = Text({{text = '[bg10]reroll: [yellow]5', font = pixul_font, alignment = 'center'}}, global_text_tags)
-    end
+    self.free_reroll = true
+    self.text = Text({{text = '[bg10]reroll: [yellow]0', font = pixul_font, alignment = 'center'}}, global_text_tags)
   end
 end
 
@@ -1013,28 +1002,13 @@ function RerollButton:update(dt)
         system.save_run(self.parent.level, self.parent.loop, gold, self.parent.units, self.parent.passives, self.parent.shop_level, self.parent.shop_xp, run_passive_pool, locked_state)
       end
     elseif self.parent:is(Arena) then
-      if gold < 5 and not self.free_reroll then
-        self.spring:pull(0.2, 200, 10)
-        self.selected = true
-        error1:play{pitch = random:float(0.95, 1.05), volume = 0.5}
-        if not self.info_text then
-          self.info_text = InfoText{group = main.current.ui, force_update = true}
-          self.info_text:activate({
-            {text = '[fg]not enough gold', font = pixul_font, alignment = 'center'},
-          }, nil, nil, nil, nil, 16, 4, nil, 2)
-          self.info_text.x, self.info_text.y = gw/2, gh/2 + 10
-        end
-        self.t:after(2, function() self.info_text:deactivate(); self.info_text.dead = true; self.info_text = nil end, 'info_text')
-      else
-        ui_switch2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
-        self.parent:set_passives(true)
-        self.selected = true
-        self.spring:pull(0.2, 200, 10)
-        if not self.free_reroll then gold = gold - 5 end
-        self.parent.shop_text:set_text{{text = '[fg, nudge_down]gold: [yellow, nudge_down]' .. gold, font = pixul_font, alignment = 'center'}}
-        self.free_reroll = false
-        self.text = Text({{text = '[bg10]reroll: [yellow]5', font = pixul_font, alignment = 'center'}}, global_text_tags)
-      end
+      ui_switch2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+      self.parent:set_passives(true)
+      self.selected = true
+      self.spring:pull(0.2, 200, 10)
+      self.parent.shop_text:set_text{{text = '[fg, nudge_down]gold: [yellow, nudge_down]' .. gold, font = pixul_font, alignment = 'center'}}
+      self.free_reroll = true
+      self.text = Text({{text = '[bg10]reroll: [yellow]0', font = pixul_font, alignment = 'center'}}, global_text_tags)
     end
 
     if input.r.pressed then self.selected = false end
@@ -1061,11 +1035,7 @@ function RerollButton:on_mouse_enter()
   if self.parent:is(BuyScreen) then
     self.text:set_text{{text = '[fgm5]reroll: 2', font = pixul_font, alignment = 'center'}}
   elseif self.parent:is(Arena) then
-    if self.free_reroll then
-      self.text:set_text{{text = '[fgm5]reroll: 0', font = pixul_font, alignment = 'center'}}
-    else
-      self.text:set_text{{text = '[fgm5]reroll: 5', font = pixul_font, alignment = 'center'}}
-    end
+    self.text:set_text{{text = '[fgm5]reroll: 0', font = pixul_font, alignment = 'center'}}
   end
   self.spring:pull(0.2, 200, 10)
 end
@@ -1075,11 +1045,7 @@ function RerollButton:on_mouse_exit()
   if self.parent:is(BuyScreen) then
     self.text:set_text{{text = '[bg10]reroll: [yellow]2', font = pixul_font, alignment = 'center'}}
   elseif self.parent:is(Arena) then
-    if self.free_reroll then
-      self.text:set_text{{text = '[fgm5]reroll: [yellow]0', font = pixul_font, alignment = 'center'}}
-    else
-      self.text:set_text{{text = '[fgm5]reroll: [yellow]5', font = pixul_font, alignment = 'center'}}
-    end
+    self.text:set_text{{text = '[bg10]reroll: [yellow]0', font = pixul_font, alignment = 'center'}}
   end
   self.selected = false
 end

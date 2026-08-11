@@ -46,7 +46,10 @@ end
 function engine_run(config)
   if not web then
     love.filesystem.setIdentity(config.game_name)
-    steam.init()
+    local ok, initialized = pcall(function() return steam.init() end)
+    if not ok or not initialized then
+      steam = dummy_steam
+    end
     system.load_state()
 
     local _, _, flags = love.window.getMode()
