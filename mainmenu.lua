@@ -7,7 +7,7 @@ function MainMenu:init(name)
 end
 
 
-function MainMenu:on_enter(from)
+function MainMenu:on_enter(from, ...)
   slow_amount = 1
   trigger:tween(2, main_song_instance, {volume = 0.5, pitch = 1}, math.linear)
 
@@ -20,6 +20,7 @@ function MainMenu:on_enter(from)
   self.effects = Group()
   self.main_ui = Group():no_camera()
   self.ui = Group():no_camera()
+  if not self.t then self.t = Trigger() end
   self.main:disable_collision_between('player', 'player')
   self.main:disable_collision_between('player', 'projectile')
   self.main:disable_collision_between('player', 'enemy_projectile')
@@ -57,10 +58,12 @@ function MainMenu:on_enter(from)
   WallCover{group = self.post_main, vertices = math.to_rectangle_vertices(self.x1, -40, self.x2, self.y1), color = bg[-1]}
   WallCover{group = self.post_main, vertices = math.to_rectangle_vertices(self.x1, self.y2, self.x2, gh + 40), color = bg[-1]}
 
-  self.t:every(0.375, function()
-    local p = random:table(star_positions)
-    Star{group = star_group, x = p.x, y = p.y}
-  end)
+  if self.t then
+    self.t:every(0.375, function()
+      local p = random:table(star_positions)
+      Star{group = star_group, x = p.x, y = p.y}
+    end)
+  end
 
   self.units = {
     {character = 'psykino', level = 1},
@@ -116,7 +119,13 @@ function MainMenu:on_enter(from)
       close_options(self)
     end
   end}
-  self.quit_button = Button{group = self.main_ui, x = 37, y = gh/2 + 34, force_update = true, button_text = 'quit', fg_color = 'bg10', bg_color = 'bg', action = function(b)
+  self.wiki_button = Button{group = self.main_ui, x = 68, y = gh/2 + 34, force_update = true, button_text = 'wiki / planner', fg_color = 'bg10', bg_color = 'bg', action = function(b)
+    ui_transition2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+    ui_switch2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+    ui_switch1:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+    main:go_to('wiki_screen', 'mainmenu')
+  end}
+  self.quit_button = Button{group = self.main_ui, x = 37, y = gh/2 + 56, force_update = true, button_text = 'quit', fg_color = 'bg10', bg_color = 'bg', action = function(b)
     system.save_state()
     steam.shutdown()
     love.event.quit()
@@ -152,6 +161,7 @@ function MainMenu:on_exit()
   self.post_main = nil
   self.effects = nil
   self.ui = nil
+  self.main_ui = nil
   self.units = nil
   self.player = nil
   self.t = nil
@@ -178,25 +188,25 @@ function MainMenu:update(dt)
   self:update_game_object(dt*slow_amount)
 
   if not self.paused and not self.transitioning then
-    star_group:update(dt*slow_amount)
-    self.floor:update(dt*slow_amount)
-    self.main:update(dt*slow_amount)
-    self.post_main:update(dt*slow_amount)
-    self.effects:update(dt*slow_amount)
-    self.main_ui:update(dt*slow_amount)
+    if star_group then star_group:update(dt*slow_amount) end
+    if self.floor then self.floor:update(dt*slow_amount) end
+    if self.main then self.main:update(dt*slow_amount) end
+    if self.post_main then self.post_main:update(dt*slow_amount) end
+    if self.effects then self.effects:update(dt*slow_amount) end
+    if self.main_ui then self.main_ui:update(dt*slow_amount) end
     if self.title_text then self.title_text:update(dt) end
-    self.ui:update(dt*slow_amount)
+    if self.ui then self.ui:update(dt*slow_amount) end
   else
-    self.ui:update(dt*slow_amount)
+    if self.ui then self.ui:update(dt*slow_amount) end
   end
 end
 
 
 function MainMenu:draw()
-  self.floor:draw()
-  self.main:draw()
-  self.post_main:draw()
-  self.effects:draw()
+  if self.floor then self.floor:draw() end
+  if self.main then self.main:draw() end
+  if self.post_main then self.post_main:draw() end
+  if self.effects then self.effects:draw() end
   graphics.draw_with_mask(function()
     star_canvas:draw(0, 0, 0, 1, 1)
   end, function()
@@ -206,8 +216,8 @@ function MainMenu:draw()
   end, true)
   graphics.rectangle(gw/2, gh/2, 2*gw, 2*gh, nil, nil, modal_transparent)
 
-  self.main_ui:draw()
-  self.title_text:draw(60, gh/2 - 40)
+  if self.main_ui then self.main_ui:draw() end
+  if self.title_text then self.title_text:draw(60, gh/2 - 40) end
   if self.paused then graphics.rectangle(gw/2, gh/2, 2*gw, 2*gh, nil, nil, modal_transparent) end
-  self.ui:draw()
+  if self.ui then self.ui:draw() end
 end

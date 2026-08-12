@@ -3,10 +3,85 @@ require 'shared'
 require 'arena'
 require 'mainmenu'
 require 'buy_screen'
+require 'wiki_screen'
 require 'objects'
 require 'player'
 require 'enemies'
 require 'media'
+
+
+function Main:get_planned_unit(character)
+  for i, unit in ipairs(self.planned_team or {}) do
+    if unit.character == character then
+      return unit, i
+    end
+  end
+  return nil, nil
+end
+
+function Main:is_in_planned_team(character)
+  local unit = self:get_planned_unit(character)
+  return unit ~= nil
+end
+
+function Main:set_planned_level(character, level)
+  local unit = self:get_planned_unit(character)
+  if unit then
+    unit.level = math.clamp(level or 1, 1, 3)
+    state.planned_team = self.planned_team
+    system.save_state()
+  end
+end
+
+function Main:toggle_planned_team(character)
+  if self:is_in_planned_team(character) then
+    self:remove_from_planned_team(character)
+  elseif #(self.planned_team or {}) < 12 then
+    table.insert(self.planned_team, { character = character, level = 1 })
+    state.planned_team = self.planned_team
+    system.save_state()
+  end
+end
+
+function Main:add_or_cycle_planned_team(character)
+  self:toggle_planned_team(character)
+end
+
+function Main:add_to_planned_team(character, level)
+  if not self:is_in_planned_team(character) then
+    if #(self.planned_team or {}) < 12 then
+      table.insert(self.planned_team, { character = character, level = level or 1 })
+      state.planned_team = self.planned_team
+      system.save_state()
+    end
+  end
+end
+
+function Main:remove_from_planned_team(idx_or_char)
+  if type(idx_or_char) == 'number' then
+    table.remove(self.planned_team, idx_or_char)
+  elseif type(idx_or_char) == 'string' then
+    for i, unit in ipairs(self.planned_team or {}) do
+      if unit.character == idx_or_char then
+        table.remove(self.planned_team, i)
+        break
+      end
+    end
+  end
+  state.planned_team = self.planned_team
+  system.save_state()
+end
+
+function Main:clear_planned_team()
+  self.planned_team = {}
+  state.planned_team = {}
+  system.save_state()
+end
+
+function Main:sync_planned_team()
+  state.planned_team = self.planned_team
+  system.save_state()
+end
 
 
 function init()
@@ -1697,21 +1772,29 @@ function init()
   }
 
   steam.userStats.requestCurrentStats()
-  new_game_plus = state.new_game_plus or 0
-  if not state.new_game_plus then state.new_game_plus = new_game_plus end
-  current_new_game_plus = state.current_new_game_plus or new_game_plus
-  if not state.current_new_game_plus then state.current_new_game_plus = current_new_game_plus end
+  max_new_game_plus = math.max(state.max_new_game_plus or 12, state.new_game_plus or 12, 12)
+  new_game_plus = max_new_game_plus
+  state.max_new_game_plus = max_new_game_plus
+  state.new_game_plus = new_game_plus
+  if state.current_new_game_plus == nil or state.current_new_game_plus == 0 then
+    current_new_game_plus = 12
+  else
+    current_new_game_plus = math.clamp(state.current_new_game_plus, 0, max_new_game_plus)
+  end
+  state.current_new_game_plus = current_new_game_plus
   max_units = math.clamp(7 + current_new_game_plus, 7, 12)
 
   main_song_instance = _G[random:table{'song1', 'song2', 'song3', 'song4', 'song5'}]:play{volume = 0.5}
   main = Main()
+  main.planned_team = state.planned_team or {}
 
   main:add(MainMenu'mainmenu')
+  main:add(WikiScreen'wiki_screen')
   main:go_to('mainmenu')
 
   --[[
   main:add(BuyScreen'buy_screen')
-  main:go_to('buy_screen', run.level or 1, run.units or {}, passives, run.shop_level or 1, run.shop_xp or 0)
+  main:go_to('buy_screen', run.level or 1, run.loop or 0, run.units or {}, passives or {}, run.shop_level or 1, run.shop_xp or 0)
   -- main:go_to('buy_screen', 7, run.units or {}, {'unleash'})
   ]]--
   
@@ -2061,10 +2144,12 @@ function open_options(self)
         ui_switch1:play{pitch = random:float(0.95, 1.05), volume = 0.5}
         b.spring:pull(0.2, 200, 10)
         b.selected = true
-        current_new_game_plus = math.clamp(current_new_game_plus - 1, 0, 5)
+        local max_ng = max_new_game_plus or new_game_plus or 12
+        current_new_game_plus = math.clamp(current_new_game_plus - 1, 0, max_ng)
         state.current_new_game_plus = current_new_game_plus
         self.ng_t.text:set_text({{text = '[bg10]current: ' .. current_new_game_plus, font = pixul_font, alignment = 'center'}})
-        max_units = 7 + current_new_game_plus
+        max_units = math.clamp(7 + current_new_game_plus, 7, 12)
+        system.save_state()
         system.save_run()
       end}
 
@@ -2072,10 +2157,12 @@ function open_options(self)
         ui_switch1:play{pitch = random:float(0.95, 1.05), volume = 0.5}
         b.spring:pull(0.2, 200, 10)
         b.selected = true
-        current_new_game_plus = math.clamp(current_new_game_plus + 1, 0, new_game_plus)
+        local max_ng = max_new_game_plus or new_game_plus or 12
+        current_new_game_plus = math.clamp(current_new_game_plus + 1, 0, max_ng)
         state.current_new_game_plus = current_new_game_plus
         self.ng_t.text:set_text({{text = '[bg10]current: ' .. current_new_game_plus, font = pixul_font, alignment = 'center'}})
-        max_units = 7 + current_new_game_plus
+        max_units = math.clamp(7 + current_new_game_plus, 7, 12)
+        system.save_state()
         system.save_run()
       end}
     end
@@ -2087,8 +2174,8 @@ function open_options(self)
         ui_switch2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
         ui_switch1:play{pitch = random:float(0.95, 1.05), volume = 0.5}
         TransitionEffect{group = main.transitions, x = gw/2, y = gh/2, color = state.dark_transitions and bg[-2] or fg[0], transition_action = function()
-          main:add(MainMenu'main_menu')
-          main:go_to('main_menu')
+          main:add(MainMenu'mainmenu')
+          main:go_to('mainmenu')
         end, text = Text({{text = '[wavy, ' .. tostring(state.dark_transitions and 'fg' or 'bg') .. ']..', font = pixul_font, alignment = 'center'}}, global_text_tags)}
       end}
     end

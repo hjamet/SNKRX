@@ -463,12 +463,12 @@ function Arena:quit()
           ItemCard{group = self.ui, x = 120 + (i-1)*30, y = 20, w = 30, h = 45, sx = 0.75, sy = 0.75, force_update = true, passive = passive.passive , level = passive.level, xp = passive.xp, parent = self}
         end
 
-        if current_new_game_plus == 6 then
+        if current_new_game_plus >= 13 then
           if current_new_game_plus == new_game_plus then
-            new_game_plus = 5
+            new_game_plus = 12
             state.new_game_plus = new_game_plus
           end
-          current_new_game_plus = 5
+          current_new_game_plus = 12
           state.current_new_game_plus = current_new_game_plus
           max_units = 12
 
@@ -819,7 +819,6 @@ function Arena:die()
     self.t:cancel('divine_punishment')
     self.died = true
     locked_state = nil
-    system.save_run()
     self.t:tween(2, self, {main_slow_amount = 0}, math.linear, function() self.main_slow_amount = 0 end)
     self.t:tween(2, _G, {music_slow_amount = 0}, math.linear, function() music_slow_amount = 0 end)
     self.died_text = Text2{group = self.ui, x = gw/2, y = gh/2 - 32, lines = {
@@ -840,8 +839,10 @@ function Arena:die()
       self.death_info_text = Text2{group = self.ui, x = gw/2, y = gh/2, sx = 0.7, sy = 0.7, lines = {
         {text = '[wavy_mid, fg]level reached: [wavy_mid, yellow]' .. self.level, font = fat_font, alignment = 'center'},
       }}
-      self.restart_button = Button{group = self.ui, x = gw/2, y = gh/2 + 24, force_update = true, button_text = 'restart run (r)', fg_color = 'bg10', bg_color = 'bg', action = function(b)
+      self.restart_button = Button{group = self.ui, x = gw/2 - 65, y = gh/2 + 28, force_update = true, button_text = 'restart run (r)', fg_color = 'bg10', bg_color = 'bg', action = function(b)
+        if self.transitioning then return end
         self.transitioning = true
+        input.m1.pressed = false
         ui_transition2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
         ui_switch2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
         ui_switch1:play{pitch = random:float(0.95, 1.05), volume = 0.5}
@@ -867,6 +868,28 @@ function Arena:die()
           main:go_to('buy_screen', 1, 0, {}, passives, 1, 0)
         end, text = Text({{text = '[wavy, ' .. tostring(state.dark_transitions and 'fg' or 'bg') .. ']restarting...', font = pixul_font, alignment = 'center'}}, global_text_tags)}
       end}
+      self.retry_level_button = Button{group = self.ui, x = gw/2 + 65, y = gh/2 + 28, force_update = true, button_text = 'retry level', fg_color = 'bg10', bg_color = 'bg', action = function(b)
+        if self.transitioning then return end
+        self.transitioning = true
+        input.m1.pressed = false
+        local retry_units = Table.copy(self.units or {})
+        local retry_passives = Table.copy(self.passives or {})
+        local retry_gold = gold
+        local retry_shop_level = self.shop_level
+        local retry_shop_xp = self.shop_xp
+        local retry_level = self.level
+        local retry_loop = self.loop
+        ui_transition2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+        ui_switch2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+        ui_switch1:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+        TransitionEffect{group = main.transitions, x = gw/2, y = gh/2, color = state.dark_transitions and bg[-2] or fg[0], transition_action = function()
+          slow_amount = 1
+          music_slow_amount = 1
+          main:add(BuyScreen'buy_screen')
+          system.save_run(retry_level, retry_loop, retry_gold, retry_units, retry_passives, retry_shop_level, retry_shop_xp, run_passive_pool, locked_state)
+          main:go_to('buy_screen', retry_level, retry_loop, retry_units, retry_passives, retry_shop_level, retry_shop_xp)
+        end, text = Text({{text = '[wavy, ' .. tostring(state.dark_transitions and 'fg' or 'bg') .. ']retrying level...', font = pixul_font, alignment = 'center'}}, global_text_tags)}
+      end}
     end)
     return true
   end
@@ -876,7 +899,7 @@ end
 function Arena:endless()
   if self.clicked_loop then return end
   self.clicked_loop = true
-  if current_new_game_plus >= 5 then current_new_game_plus = 5
+  if current_new_game_plus >= 12 then current_new_game_plus = 12
   else current_new_game_plus = current_new_game_plus - 1 end
   if current_new_game_plus < 0 then current_new_game_plus = 0 end
   self.loop = self.loop + 1

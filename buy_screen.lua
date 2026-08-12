@@ -35,16 +35,50 @@ function BuyScreen:on_exit()
   self.tutorial_button = nil
   self.restart_button = nil
   self.level_button = nil
+  self.wiki_button = nil
 end
 
 
 function BuyScreen:on_enter(from, level, loop, units, passives, shop_level, shop_xp)
-  self.level = level
-  self.loop = loop
-  self.units = units
-  self.passives = passives
-  self.shop_level = shop_level
-  self.shop_xp = shop_xp
+  local from_name = type(from) == 'table' and from.name or from
+
+  if level == 'buy_screen' then
+    level, loop, units, passives, shop_level, shop_xp = loop, units, passives, shop_level, shop_xp, nil
+  end
+
+  if type(level) ~= 'number' and type(from) == 'string' and from == 'buy_screen' then
+    level, loop, units, passives, shop_level, shop_xp = loop, units, passives, shop_level, shop_xp, nil
+  end
+
+  if from_name == 'wiki_screen' or from == 'wiki_screen' then
+    self.level = (type(level) == 'number' and level) or self.level or 1
+    self.loop = (type(loop) == 'number' and loop) or self.loop or 0
+    if type(units) == 'table' then
+      self.units = units
+    elseif type(self.units) ~= 'table' then
+      self.units = {}
+    end
+    if type(passives) == 'table' then
+      self.passives = passives
+    elseif type(self.passives) ~= 'table' then
+      self.passives = {}
+    end
+    self.shop_level = (type(shop_level) == 'number' and shop_level) or self.shop_level or 1
+    self.shop_xp = (type(shop_xp) == 'number' and shop_xp) or self.shop_xp or 0
+  else
+    self.level = (type(level) == 'number' and level) or 1
+    self.loop = (type(loop) == 'number' and loop) or 0
+    self.units = (type(units) == 'table' and units) or {}
+    self.passives = (type(passives) == 'table' and passives) or {}
+    self.shop_level = (type(shop_level) == 'number' and shop_level) or 1
+    self.shop_xp = (type(shop_xp) == 'number' and shop_xp) or 0
+  end
+  level = self.level
+  loop = self.loop
+  units = self.units
+  passives = self.passives
+  shop_level = self.shop_level
+  shop_xp = self.shop_xp
   camera.x, camera.y = gw/2, gh/2
   max_units = math.clamp(7 + current_new_game_plus + self.loop, 7, 12)
 
@@ -57,6 +91,7 @@ function BuyScreen:on_enter(from, level, loop, units, passives, shop_level, shop
   self.effects = Group()
   self.ui = Group()
   self.tutorial = Group()
+  if not self.t then self.t = Trigger() end
 
   self.locked = locked_state and locked_state.locked
   LockButton{group = self.main, x = 205, y = 18, parent = self}
@@ -80,6 +115,23 @@ function BuyScreen:on_enter(from, level, loop, units, passives, shop_level, shop
   RerollButton{group = self.main, x = 150, y = 18, parent = self}
   GoButton{group = self.main, x = gw - 90, y = gh - 20, parent = self}
   LevelButton{group = self.main, x = gw/2, y = 18, parent = self}
+  self.wiki_button = Button{group = self.main, x = gw/2 + 109, y = 18, button_text = 'W', fg_color = 'bg10', bg_color = 'bg', action = function()
+    ui_transition2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+    ui_switch2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+    ui_switch1:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+    main:go_to('wiki_screen', self.level, self.loop, self.units, self.passives, self.shop_level, self.shop_xp)
+  end, mouse_enter = function(b)
+    b.info_text = InfoText{group = main.current.ui, force_update = true}
+    b.info_text:activate({
+      {text = '[fg]wiki / planner (w)', font = pixul_font, alignment = 'center'},
+    }, nil, nil, nil, nil, 16, 4, nil, 2)
+    b.info_text.x, b.info_text.y = b.x, b.y + 20
+  end, mouse_exit = function(b)
+    if not b.info_text then return end
+    b.info_text:deactivate()
+    b.info_text.dead = true
+    b.info_text = nil
+  end}
   self.tutorial_button = Button{group = self.main, x = gw/2 + 129, y = 18, button_text = '?', fg_color = 'bg10', bg_color = 'bg', action = function()
     self.in_tutorial = true
     self.title_text = Text2{group = self.tutorial, x = gw/2, y = 35, lines = {{text = '[fg]WELCOME TO SNKRX!', font = fat_font, alignment = 'center'}}}
@@ -187,9 +239,9 @@ function BuyScreen:update(dt)
   self:update_game_object(dt*slow_amount)
 
   if not self.in_tutorial and not self.paused then
-    self.main:update(dt*slow_amount)
-    self.effects:update(dt*slow_amount)
-    self.ui:update(dt*slow_amount)
+    if self.main then self.main:update(dt*slow_amount) end
+    if self.effects then self.effects:update(dt*slow_amount) end
+    if self.ui then self.ui:update(dt*slow_amount) end
     if self.shop_text then self.shop_text:update(dt) end
     if self.sets_text then self.sets_text:update(dt) end
     if self.party_text then self.party_text:update(dt) end
@@ -197,12 +249,19 @@ function BuyScreen:update(dt)
     if self.ng_text then self.ng_text:update(dt) end
     if self.level_text then self.level_text:update(dt) end
   else
-    self.ui:update(dt*slow_amount)
-    self.tutorial:update(dt*slow_amount)
+    if self.ui then self.ui:update(dt*slow_amount) end
+    if self.tutorial then self.tutorial:update(dt*slow_amount) end
   end
 
   if self.in_tutorial and input.escape.pressed then
     self:quit_tutorial()
+  end
+
+  if input.w.pressed and not self.transitioning and not self.in_tutorial and not self.paused then
+    ui_transition2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+    ui_switch2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+    ui_switch1:play{pitch = random:float(0.95, 1.05), volume = 0.5}
+    main:go_to('wiki_screen', self.level, self.loop, self.units, self.passives, self.shop_level, self.shop_xp)
   end
 
   if input.escape.pressed and not self.transitioning and not self.in_tutorial then
@@ -213,29 +272,29 @@ function BuyScreen:update(dt)
     end
   end
 
-  for _, part in ipairs(self.characters) do
-    part.y = 40 + (part.i-1)*19
+  if self.characters then
+    for _, part in ipairs(self.characters) do
+      part.y = 40 + (part.i-1)*19
+    end
   end
 end
 
 
 function BuyScreen:quit_tutorial()
   self.in_tutorial = false
-  self.tutorial_text.dead = true
-  self.tutorial_text = nil
-  self.title_text.dead = true
-  self.title_text = nil
-  for _, t in ipairs(self.tutorial_cards) do t.dead = true end
-  self.close_button.dead = true
-  self.close_button = nil
+  if self.tutorial_text then self.tutorial_text.dead = true; self.tutorial_text = nil end
+  if self.title_text then self.title_text.dead = true; self.title_text = nil end
+  if self.tutorial_cards then for _, t in ipairs(self.tutorial_cards) do t.dead = true end end
+  if self.close_button then self.close_button.dead = true; self.close_button = nil end
   self.tutorial_cards = {}
-  self.tutorial:update(0)
+  if self.tutorial then self.tutorial:update(0) end
 end
 
 
 function BuyScreen:draw()
-  self.main:draw()
-  self.effects:draw()
+  if self.floor then self.floor:draw() end
+  if self.main then self.main:draw() end
+  if self.effects then self.effects:draw() end
   if self.items_text then self.items_text:draw(32, 145) end
   if self.level_text then self.level_text:draw(265, gh - 20) end
 
@@ -252,19 +311,19 @@ function BuyScreen:draw()
   end
 
   if self.shop_text then self.shop_text:draw(64, 20) end
-  if self.sets_text then self.sets_text:draw(328, 20) end
+  if self.sets_text then self.sets_text:draw(305, 20) end
   if self.party_text then self.party_text:draw(440, 20) end
-  if current_new_game_plus > 0 then self.ng_text:draw(265, gh - 40) end
+  if current_new_game_plus and current_new_game_plus > 0 and self.ng_text then self.ng_text:draw(265, gh - 40) end
 
   if self.paused then graphics.rectangle(gw/2, gh/2, 2*gw, 2*gh, nil, nil, modal_transparent) end
-  self.ui:draw()
+  if self.ui then self.ui:draw() end
 
   if self.in_tutorial then
     graphics.rectangle(gw/2, gh/2, 2*gw, 2*gh, nil, nil, modal_transparent_2)
     arrow:draw(gw/2 + 93, gh/2 - 30, 0, 0.4, 0.35)
     arrow:draw(gw/2 + 93, gh/2 - 10, 0, 0.4, 0.35)
   end
-  self.tutorial:draw()
+  if self.tutorial then self.tutorial:draw() end
 end
 
 
@@ -815,6 +874,29 @@ end
 function LevelButton:update(dt)
   self:update_game_object(dt)
 
+  local opt_level = nil
+  if self.parent and self.parent.get_optimal_shop_level then
+    opt_level = self.parent:get_optimal_shop_level()
+  end
+  local is_rec = opt_level and self.parent.shop_level < opt_level
+
+  local base_color = self.selected and 'fgm5' or 'bg10'
+  local text_str, raw_str
+  if is_rec then
+    text_str = '[' .. base_color .. ']' .. tostring(self.parent.shop_level) .. ' [yellow]- ' .. tostring(opt_level)
+    raw_str = tostring(self.parent.shop_level) .. ' - ' .. tostring(opt_level)
+  else
+    text_str = '[' .. base_color .. ']' .. tostring(self.parent.shop_level)
+    raw_str = tostring(self.parent.shop_level)
+  end
+
+  if text_str ~= self.last_text_str then
+    self.last_text_str = text_str
+    self.text = Text({{text = text_str, font = pixul_font, alignment = 'center'}}, global_text_tags)
+    local tw = pixul_font:get_text_width(raw_str)
+    self.shape = Rectangle(self.x, self.y, math.max(16, tw + 12), 16)
+  end
+
   if self.selected and input.m1.pressed then
     if self.parent.shop_level >= 5 then return end
     if gold < 5 then
@@ -840,10 +922,10 @@ function LevelButton:update(dt)
       self.parent.shop_xp = self.shop_xp
       self:create_info_text()
       self.selected = true
+      self.last_text_str = nil
       self.spring:pull(0.2, 200, 10)
       gold = gold - 5
       self.parent.shop_text:set_text{{text = '[wavy_mid, fg]shop [fg]- [fg, nudge_down]gold: [yellow, nudge_down]' .. gold, font = pixul_font, alignment = 'center'}}
-      self.text = Text({{text = '[bg10]' .. tostring(self.parent.shop_level), font = pixul_font, alignment = 'center'}}, global_text_tags)
       system.save_run(self.parent.level, self.parent.loop, gold, self.parent.units, self.parent.passives, self.parent.shop_level, self.parent.shop_xp, run_passive_pool, locked_state)
     end
   end
@@ -870,10 +952,10 @@ function LevelButton:update(dt)
       self.parent.shop_xp = self.shop_xp
       self:create_info_text()
       self.selected = true
+      self.last_text_str = nil
       self.spring:pull(0.2, 200, 10)
       gold = gold - 10
       self.parent.shop_text:set_text{{text = '[wavy_mid, fg]shop [fg]- [fg, nudge_down]gold: [yellow, nudge_down]' .. gold, font = pixul_font, alignment = 'center'}}
-      self.text = Text({{text = '[bg10]' .. tostring(self.parent.shop_level), font = pixul_font, alignment = 'center'}}, global_text_tags)
       system.save_run(self.parent.level, self.parent.loop, gold, self.parent.units, self.parent.passives, self.parent.shop_level, self.parent.shop_xp, run_passive_pool, locked_state)
     end
   end
@@ -883,12 +965,23 @@ end
 function LevelButton:draw()
   graphics.push(self.x, self.y, 0, self.spring.x, self.spring.y)
     graphics.rectangle(self.x, self.y, self.shape.w, self.shape.h, 4, 4, self.selected and fg[0] or bg[1])
+
+    local opt_level = nil
+    if self.parent and self.parent.get_optimal_shop_level then
+      opt_level = self.parent:get_optimal_shop_level()
+    end
+    if opt_level and self.parent.shop_level < opt_level then
+      graphics.rectangle(self.x, self.y, self.shape.w, self.shape.h, 4, 4, yellow[0], 1.5)
+    end
+
     self.text:draw(self.x, self.y + 1)
+
+    local xp_x = self.x + self.shape.w/2 + 4
     for i = 1, self.max_xp do
-      graphics.line(self.x + 0.9*self.shape.w + (i-1)*5, self.y - self.shape.h/3, self.x + 0.9*self.shape.w + (i-1)*5, self.y + self.shape.h/3, bg[1], 2)
+      graphics.line(xp_x + (i-1)*5, self.y - self.shape.h/3, xp_x + (i-1)*5, self.y + self.shape.h/3, bg[1], 2)
     end
     for i = 1, self.shop_xp do
-      graphics.line(self.x + 0.9*self.shape.w + (i-1)*5, self.y - self.shape.h/3, self.x + 0.9*self.shape.w + (i-1)*5, self.y + self.shape.h/3, fg[0], 2)
+      graphics.line(xp_x + (i-1)*5, self.y - self.shape.h/3, xp_x + (i-1)*5, self.y + self.shape.h/3, fg[0], 2)
     end
   graphics.pop()
 end
@@ -900,38 +993,61 @@ function LevelButton:create_info_text()
     self.info_text.dead = true
   end
   self.info_text = nil
+
+  local opt_level, avg_odds = nil, 0
+  if self.parent and self.parent.get_optimal_shop_level then
+    opt_level, avg_odds = self.parent:get_optimal_shop_level()
+  end
+  local odds_str = (avg_odds == math.floor(avg_odds)) and tostring(math.floor(avg_odds)) or string.format('%.1f', avg_odds)
+
   if self.parent.shop_level < 5 then
     local t11, t12 = get_shop_odds(self.parent.shop_level, 1), get_shop_odds(self.parent.shop_level+1, 1)
     local t21, t22 = get_shop_odds(self.parent.shop_level, 2), get_shop_odds(self.parent.shop_level+1, 2)
     local t31, t32 = get_shop_odds(self.parent.shop_level, 3), get_shop_odds(self.parent.shop_level+1, 3)
     local t41, t42 = get_shop_odds(self.parent.shop_level, 4), get_shop_odds(self.parent.shop_level+1, 4)
-    self.info_text = InfoText{group = main.current.ui}
-    self.info_text:activate({
+
+    local lines = {
       {text = '[yellow]Lv.' .. self.parent.shop_level .. '[fg] shop, XP: [yellow]' .. self.shop_xp .. '/' .. self.max_xp .. '[fg], +1 XP cost: [yellow]5', font = pixul_font, alignment = 'center', height_multiplier = 1.5},
-      {text = '[bg10]chances of units appearing on the shop', font = pixul_font, alignment = 'center', height_multiplier = 1.25},
-      {text = '[yellow]current shop level                  [fgm10]next shop level', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-      {text = '[fg]tier 1: ' .. t11 .. '%' .. tostring(t11 < 10 and '  ' or '') .. '                                 [fgm8]tier 1: ' .. t12 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-      {text = '[green]tier 2: ' .. t21 .. '%' .. tostring(t21 < 10 and '  ' or '') .. '                                 [fgm6]tier 2: ' .. t22 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-      {text = '[blue]tier 3: ' .. t31 .. '%' .. tostring(t31 < 10 and '  ' or '') .. '                                 [fgm4]tier 3: ' .. t32 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-      {text = '[purple]tier 4: ' .. t41 .. '%' .. tostring(t41 < 10 and '  ' or '') .. '                                 [fgm2]tier 4: ' .. t42 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-    }, nil, nil, nil, nil, 16, 4, nil, 2)
-    self.info_text.x, self.info_text.y = gw/2, gh/2 - 45
+    }
+
+    if opt_level then
+      table.insert(lines, {text = '[yellow]Optimal Shop Lv for Planned Team: [fg]Lv.' .. opt_level .. ' [yellow](' .. odds_str .. '% avg odds)', font = pixul_font, alignment = 'center', height_multiplier = 1.5})
+    end
+
+    table.insert(lines, {text = '[bg10]chances of units appearing on the shop', font = pixul_font, alignment = 'center', height_multiplier = 1.25})
+    table.insert(lines, {text = '[yellow]current shop level                  [fgm10]next shop level', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+    table.insert(lines, {text = '[fg]tier 1: ' .. t11 .. '%' .. tostring(t11 < 10 and '  ' or '') .. '                                 [fgm8]tier 1: ' .. t12 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+    table.insert(lines, {text = '[green]tier 2: ' .. t21 .. '%' .. tostring(t21 < 10 and '  ' or '') .. '                                 [fgm6]tier 2: ' .. t22 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+    table.insert(lines, {text = '[blue]tier 3: ' .. t31 .. '%' .. tostring(t31 < 10 and '  ' or '') .. '                                 [fgm4]tier 3: ' .. t32 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+    table.insert(lines, {text = '[purple]tier 4: ' .. t41 .. '%' .. tostring(t41 < 10 and '  ' or '') .. '                                 [fgm2]tier 4: ' .. t42 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+
+    self.info_text = InfoText{group = main.current.ui}
+    self.info_text:activate(lines, nil, nil, nil, nil, 16, 4, nil, 2)
+    self.info_text.x, self.info_text.y = gw/2, gh/2 - (opt_level and 55 or 45)
   elseif self.parent.shop_level == 5 then
     local t11 = get_shop_odds(self.parent.shop_level, 1)
     local t21 = get_shop_odds(self.parent.shop_level, 2)
     local t31 = get_shop_odds(self.parent.shop_level, 3)
     local t41 = get_shop_odds(self.parent.shop_level, 4)
-    self.info_text = InfoText{group = main.current.ui}
-    self.info_text:activate({
+
+    local lines = {
       {text = '[yellow]Lv.' .. self.parent.shop_level .. '[fg] shop', font = pixul_font, alignment = 'center', height_multiplier = 1.5},
-      {text = '[bg10]chances of units appearing on the shop', font = pixul_font, alignment = 'center', height_multiplier = 1.25},
-      {text = '[yellow]current shop level', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-      {text = '[fg]tier 1: ' .. t11 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-      {text = '[green]tier 2: ' .. t21 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-      {text = '[blue]tier 3: ' .. t31 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-      {text = '[purple]tier 4: ' .. t41 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25},
-    }, nil, nil, nil, nil, 16, 4, nil, 2)
-    self.info_text.x, self.info_text.y = gw/2, gh/2 - 45
+    }
+
+    if opt_level then
+      table.insert(lines, {text = '[yellow]Optimal Shop Lv for Planned Team: [fg]Lv.' .. opt_level .. ' [yellow](' .. odds_str .. '% avg odds)', font = pixul_font, alignment = 'center', height_multiplier = 1.5})
+    end
+
+    table.insert(lines, {text = '[bg10]chances of units appearing on the shop', font = pixul_font, alignment = 'center', height_multiplier = 1.25})
+    table.insert(lines, {text = '[yellow]current shop level', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+    table.insert(lines, {text = '[fg]tier 1: ' .. t11 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+    table.insert(lines, {text = '[green]tier 2: ' .. t21 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+    table.insert(lines, {text = '[blue]tier 3: ' .. t31 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+    table.insert(lines, {text = '[purple]tier 4: ' .. t41 .. '%', font = pixul_font, alignment = 'left', height_multiplier = 1.25})
+
+    self.info_text = InfoText{group = main.current.ui}
+    self.info_text:activate(lines, nil, nil, nil, nil, 16, 4, nil, 2)
+    self.info_text.x, self.info_text.y = gw/2, gh/2 - (opt_level and 55 or 45)
   end
 end
 
@@ -940,15 +1056,15 @@ function LevelButton:on_mouse_enter()
   ui_hover1:play{pitch = random:float(1.3, 1.5), volume = 0.5}
   pop2:play{pitch = random:float(0.95, 1.05), volume = 0.5}
   self.selected = true
-  self.text:set_text{{text = '[fgm5]' .. tostring(self.parent.shop_level), font = pixul_font, alignment = 'center'}}
+  self.last_text_str = nil
   self.spring:pull(0.2, 200, 10)
   self:create_info_text()
 end
 
 
 function LevelButton:on_mouse_exit()
-  self.text:set_text{{text = '[bg10]' .. tostring(self.parent.shop_level), font = pixul_font, alignment = 'center'}}
   self.selected = false
+  self.last_text_str = nil
   if self.info_text then
     self.info_text:deactivate()
     self.info_text.dead = true
@@ -1539,6 +1655,52 @@ function BuyScreen:refresh_cards()
 end
 
 
+function BuyScreen:get_optimal_shop_level()
+  if not main or not main.planned_team or #main.planned_team == 0 then
+    return nil, 0
+  end
+
+  local needed_tiers = {}
+  for _, p_unit in ipairs(main.planned_team) do
+    local char = p_unit.character
+    local owned_unit = nil
+    for _, u in ipairs(self.units) do
+      if u.character == char then
+        owned_unit = u
+        break
+      end
+    end
+    if not owned_unit or owned_unit.level < 3 then
+      local tier = character_tiers[char]
+      if tier then
+        table.insert(needed_tiers, tier)
+      end
+    end
+  end
+
+  if #needed_tiers == 0 then
+    return nil, 0
+  end
+
+  local best_level = 1
+  local max_avg_odds = -1
+
+  for lvl = 1, 5 do
+    local sum_odds = 0
+    for _, tier in ipairs(needed_tiers) do
+      sum_odds = sum_odds + (level_to_shop_odds[lvl][tier] or 0)
+    end
+    local avg_odds = sum_odds / #needed_tiers
+    if avg_odds > max_avg_odds then
+      max_avg_odds = avg_odds
+      best_level = lvl
+    end
+  end
+
+  return best_level, max_avg_odds
+end
+
+
 
 ShopCard = Object:extend()
 ShopCard:implement(GameObject)
@@ -1626,6 +1788,10 @@ function ShopCard:draw()
   graphics.push(self.x, self.y, 0, self.sx*self.spring.x, self.sy*self.spring.x)
     if self.selected then
       graphics.rectangle(self.x, self.y, self.w, self.h, 6, 6, bg[-1])
+    end
+    if main and main:is_in_planned_team(self.unit) then
+      graphics.rectangle(self.x, self.y, self.w + 4, self.h + 4, 6, 6, yellow[0], 2)
+      star:draw(self.x - self.w/2 + 8, self.y - self.h/2 + 8, 0, 0.5, 0.5, 0, 0, yellow[0])
     end
     if self.owned then
       local x, y = self.x + self.w/5, self.y - self.h/2 + 12

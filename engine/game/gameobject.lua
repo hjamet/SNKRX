@@ -40,11 +40,11 @@ end
 
 
 function GameObject:update_game_object(dt)
-  self.t:update(dt)
-  self.springs:update(dt)
-  self.flashes:update(dt)
-  self.hfx:update(dt)
-  self.spring:update(dt)
+  if self.t then self.t:update(dt) end
+  if self.springs then self.springs:update(dt) end
+  if self.flashes then self.flashes:update(dt) end
+  if self.hfx then self.hfx:update(dt) end
+  if self.spring then self.spring:update(dt) end
   if self.body then self:update_physics(dt) end
 
   if self.shape then

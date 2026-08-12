@@ -180,7 +180,7 @@ function Seeker:init(args)
   elseif self.headbutter then
     self.color = orange[0]:clone()
     self.last_headbutt_time = 0
-    local n = math.remap(current_new_game_plus, 0, 5, 1, 0.5)
+    local n = math.remap(current_new_game_plus, 0, 12, 1, 0.5)
     self.t:every(function() return math.distance(self.x, self.y, main.current.player.x, main.current.player.y) < 76 and love.timer.getTime() - self.last_headbutt_time > 10*n end, function()
       if self.silenced or self.barbarian_stunned then return end
       if self.headbutt_charging or self.headbutting then return end
@@ -204,7 +204,7 @@ function Seeker:init(args)
     self.buff_hp_m = 1.25 + (0.1*self.level) + (0.4*current_new_game_plus)
     self:calculate_stats()
     self.hp = self.max_hp
-    local n = math.remap(current_new_game_plus, 0, 5, 1, 0.75)
+    local n = math.remap(current_new_game_plus, 0, 12, 1, 0.75)
     self.t:every({3*n, 5*n}, function()
       if self.silenced or self.barbarian_stunned then return end
       local enemy = self:get_closest_object_in_shape(Circle(self.x, self.y, 64), main.current.enemies)
@@ -217,7 +217,7 @@ function Seeker:init(args)
     end)
   elseif self.shooter then
     self.color = fg[0]:clone()
-    local n = math.remap(current_new_game_plus, 0, 5, 1, 0.5)
+    local n = math.remap(current_new_game_plus, 0, 12, 1, 0.5)
     self.t:after({2*n, 4*n}, function()
       self.shooting = true
       self.t:every({4, 6}, function()
