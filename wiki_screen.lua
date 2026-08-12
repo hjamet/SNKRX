@@ -251,11 +251,35 @@ function WikiScreen:build_filter_buttons()
   layout_tier_row(tier_list, 68)
 end
 
-function WikiScreen:calculate_unit_score(character)
+function WikiScreen:init_stat_cache()
+  self.unit_stat_cache = {}
+  for _, unit_name in ipairs(self.all_units_sorted) do
+    local base = { hp = 100, dmg = 10, aspd = 1, area = 1, def = 25, spd = 75 }
+    local classes = character_classes[unit_name] or {}
+    for _, c in ipairs(classes) do
+      local m = class_stat_multipliers[c]
+      if m then
+        base.hp = base.hp * (m.hp or 1)
+        base.dmg = base.dmg * (m.dmg or 1)
+        base.aspd = base.aspd * (m.aspd or 1)
+        base.area = base.area * ((m.area_dmg or 1) * (m.area_size or 1))
+        base.def = base.def * (m.def or 1)
+        base.spd = base.spd * (m.mvspd or 1)
+      end
+    end
+    self.unit_stat_cache[unit_name] = base
+  end
+end
+
+function WikiScreen:calculate_unit_tuple(character)
   local classes = character_classes[character] or {}
   local planned = main.planned_team or {}
   local units_per_class = get_number_of_units_per_class(planned)
-  local score = 0
+
+  local p1 = 0
+  local p2 = 0
+  local p3 = 0
+  local p4 = character_tiers[character] or 1
 
   for _, c in ipairs(classes) do
     local count = units_per_class[c] or 0
@@ -263,24 +287,58 @@ function WikiScreen:calculate_unit_score(character)
     if class_set_numbers and class_set_numbers[c] then
       local i, j, k = class_set_numbers[c](planned)
       if (i and new_count == i) or (j and new_count == j) or (k and new_count == k) then
-        score = score + 1000
-      elseif count > 0 then
-        score = score + 100
-      else
-        score = score + 10
+        p1 = p1 + 1
       end
+    end
+    if count > 0 then
+      p2 = p2 + 1
     else
-      if count > 0 then
-        score = score + 100
-      else
-        score = score + 10
+      p3 = p3 + 1
+    end
+  end
+
+  return { p1 = p1, p2 = p2, p3 = p3, p4 = p4 }
+end
+
+
+function WikiScreen:get_filtered_units()
+  local planned_set = {}
+  if main and main.planned_team then
+    for _, u in ipairs(main.planned_team) do
+      if u and u.character then
+        planned_set[u.character] = true
       end
     end
   end
 
-  score = score + (character_tiers[character] or 1) * 0.1
-  return score
+  local visible_units = {}
+  for _, unit_name in ipairs(self.all_units_sorted) do
+    if not planned_set[unit_name] then
+      local tier = character_tiers[unit_name] or 1
+      local tier_match = (self.selected_tier == nil or tier == self.selected_tier)
+
+      local class_match = false
+      if next(self.selected_classes) == nil then
+        class_match = true
+      else
+        local u_classes = character_classes[unit_name] or {}
+        for _, cl in ipairs(u_classes) do
+          if self.selected_classes[cl] then
+            class_match = true
+            break
+          end
+        end
+      end
+
+      if tier_match and class_match then
+        table.insert(visible_units, unit_name)
+      end
+    end
+  end
+
+  return visible_units
 end
+
 
 function WikiScreen:refresh_unit_cards()
   if self.unit_cards then
@@ -288,33 +346,15 @@ function WikiScreen:refresh_unit_cards()
   end
   self.unit_cards = {}
 
-  local visible_units = {}
-  for _, unit_name in ipairs(self.all_units_sorted) do
-    local tier = character_tiers[unit_name] or 1
-    local tier_match = (self.selected_tier == nil or tier == self.selected_tier)
-
-    local class_match = false
-    if next(self.selected_classes) == nil then
-      class_match = true
-    else
-      local u_classes = character_classes[unit_name] or {}
-      for _, cl in ipairs(u_classes) do
-        if self.selected_classes[cl] then
-          class_match = true
-          break
-        end
-      end
-    end
-
-    if tier_match and class_match then
-      table.insert(visible_units, unit_name)
-    end
-  end
+  local visible_units = self:get_filtered_units()
 
   table.sort(visible_units, function(a, b)
-    local sa = self:calculate_unit_score(a)
-    local sb = self:calculate_unit_score(b)
-    if sa ~= sb then return sa > sb end
+    local ta = self:calculate_unit_tuple(a)
+    local tb = self:calculate_unit_tuple(b)
+    if ta.p1 ~= tb.p1 then return ta.p1 > tb.p1 end
+    if ta.p2 ~= tb.p2 then return ta.p2 > tb.p2 end
+    if ta.p3 ~= tb.p3 then return ta.p3 > tb.p3 end
+    if ta.p4 ~= tb.p4 then return ta.p4 > tb.p4 end
     return (character_names[a] or a) < (character_names[b] or b)
   end)
 
@@ -341,7 +381,57 @@ function WikiScreen:refresh_unit_cards()
   end
 end
 
+function WikiScreen:calculate_unit_right_utility_score(character)
+  local char_name = (type(character) == 'table' and character.character) and character.character or character
+  if not char_name or type(char_name) ~= 'string' then return 0 end
+
+  local planned = main.planned_team or {}
+  local units_per_class = get_number_of_units_per_class(planned)
+  local classes = character_classes[char_name] or {}
+  local utility_score = 0
+
+  for _, c in ipairs(classes) do
+    local count = units_per_class[c] or 0
+    if class_set_numbers and class_set_numbers[c] then
+      local min_threshold = class_set_numbers[c](planned)
+      if min_threshold and count >= min_threshold then
+        utility_score = utility_score + count
+      end
+    end
+  end
+
+  return utility_score
+end
+
+function WikiScreen:sort_planned_team()
+  if not main or not main.planned_team or #main.planned_team <= 1 then return end
+
+  table.sort(main.planned_team, function(a, b)
+    local char_a = (type(a) == 'table' and a.character) and a.character or a
+    local char_b = (type(b) == 'table' and b.character) and b.character or b
+
+    local score_a = self:calculate_unit_right_utility_score(char_a)
+    local score_b = self:calculate_unit_right_utility_score(char_b)
+
+    if score_a ~= score_b then
+      return score_a > score_b
+    end
+
+    local tier_a = character_tiers[char_a] or 1
+    local tier_b = character_tiers[char_b] or 1
+    if tier_a ~= tier_b then
+      return tier_a > tier_b
+    end
+
+    local name_a = character_names[char_a] or char_a
+    local name_b = character_names[char_b] or char_b
+    return name_a < name_b
+  end)
+end
+
 function WikiScreen:refresh_right_panel()
+  self:sort_planned_team()
+
   if self.team_slots then
     for _, slot in ipairs(self.team_slots) do slot:die() end
   end
@@ -405,9 +495,28 @@ function WikiScreen:refresh_right_panel()
 end
 
 function WikiScreen:calculate_team_stat_benchmarks()
-  local planned = main.planned_team or {}
-  local units_per_class = get_number_of_units_per_class(planned)
+  if not self.unit_stat_cache then
+    self:init_stat_cache()
+  end
 
+  local planned = main.planned_team or {}
+  local K = #planned
+
+  if K == 0 then
+    local stats_data = {}
+    local stat_keys = {'hp', 'dmg', 'aspd', 'area', 'def', 'spd'}
+    for _, key in ipairs(stat_keys) do
+      stats_data[key] = {
+        current = 0,
+        max_bench = 1,
+        efficiency = 0,
+        comment = "Empty Team"
+      }
+    end
+    return stats_data
+  end
+
+  local units_per_class = get_number_of_units_per_class(planned)
   local active_classes = {}
   for _, c in ipairs(self.all_classes) do
     if (units_per_class[c] or 0) > 0 then
@@ -415,63 +524,121 @@ function WikiScreen:calculate_team_stat_benchmarks()
     end
   end
 
-  local curr = { hp = 1, dmg = 1, aspd = 1, area = 1, def = 1, spd = 1 }
+  local syn = { hp = 1, dmg = 1, aspd = 1, area = 1, def = 1, spd = 1 }
   for _, c in ipairs(active_classes) do
     if class_stat_multipliers[c] then
       local m = class_stat_multipliers[c]
-      curr.hp = curr.hp * (m.hp or 1)
-      curr.dmg = curr.dmg * (m.dmg or 1)
-      curr.aspd = curr.aspd * (m.aspd or 1)
-      curr.area = curr.area * ((m.area_dmg or 1) * (m.area_size or 1))
-      curr.def = curr.def * (m.def or 1)
-      curr.spd = curr.spd * (m.mvspd or 1)
+      syn.hp = syn.hp * (m.hp or 1)
+      syn.dmg = syn.dmg * (m.dmg or 1)
+      syn.aspd = syn.aspd * (m.aspd or 1)
+      syn.area = syn.area * ((m.area_dmg or 1) * (m.area_size or 1))
+      syn.def = syn.def * (m.def or 1)
+      syn.spd = syn.spd * (m.mvspd or 1)
     end
   end
 
-  local K = math.max(1, #planned)
-  local stat_mults = { hp = {}, dmg = {}, aspd = {}, area = {}, def = {}, spd = {} }
-  for _, c in ipairs(self.all_classes) do
-    if class_stat_multipliers[c] then
-      local m = class_stat_multipliers[c]
-      if (m.hp or 1) > 1 then table.insert(stat_mults.hp, m.hp) end
-      if (m.dmg or 1) > 1 then table.insert(stat_mults.dmg, m.dmg) end
-      if (m.aspd or 1) > 1 then table.insert(stat_mults.aspd, m.aspd) end
-      local area_val = (m.area_dmg or 1) * (m.area_size or 1)
-      if area_val > 1 then table.insert(stat_mults.area, area_val) end
-      if (m.def or 1) > 1 then table.insert(stat_mults.def, m.def) end
-      if (m.mvspd or 1) > 1 then table.insert(stat_mults.spd, m.mvspd) end
+  local curr = { hp = 0, dmg = 0, aspd = 0, area = 0, def = 0, spd = math.huge }
+  for _, u in ipairs(planned) do
+    local u_name = u.character
+    local base = self.unit_stat_cache[u_name] or { hp = 100, dmg = 10, aspd = 1, area = 1, def = 25, spd = 75 }
+    curr.hp = curr.hp + base.hp * syn.hp
+    curr.dmg = curr.dmg + base.dmg * syn.dmg
+    curr.aspd = curr.aspd + base.aspd * syn.aspd
+    curr.area = curr.area + base.area * syn.area
+    curr.def = curr.def + base.def * syn.def
+    local u_spd = base.spd * syn.spd
+    if u_spd < curr.spd then
+      curr.spd = u_spd
     end
   end
 
+  local stat_keys = {'hp', 'dmg', 'aspd', 'area', 'def', 'spd'}
+  local min_bench = {}
   local max_bench = {}
-  for stat, mults in pairs(stat_mults) do
-    table.sort(mults, function(a, b) return a > b end)
-    local bench = 1
-    local count = math.min(K, #mults)
-    for i = 1, count do
-      bench = bench * mults[i]
+
+  for _, key in ipairs(stat_keys) do
+    if key == 'spd' then
+      local speeds = {}
+      for _, u_name in ipairs(self.all_units_sorted) do
+        table.insert(speeds, (self.unit_stat_cache[u_name] and self.unit_stat_cache[u_name].spd) or 75)
+      end
+      table.sort(speeds, function(a, b) return a < b end)
+      min_bench.spd = speeds[1] or 75
+
+      table.sort(speeds, function(a, b) return a > b end)
+      local spd_mults = {}
+      for _, c in ipairs(self.all_classes) do
+        if class_stat_multipliers[c] and (class_stat_multipliers[c].mvspd or 1) > 1 then
+          table.insert(spd_mults, class_stat_multipliers[c].mvspd)
+        end
+      end
+      table.sort(spd_mults, function(a, b) return a > b end)
+      local max_syn_spd = 1
+      for i = 1, math.min(K, #spd_mults) do
+        max_syn_spd = max_syn_spd * spd_mults[i]
+      end
+      max_bench.spd = (speeds[math.min(K, #speeds)] or 75) * max_syn_spd
+    else
+      local stat_vals = {}
+      for _, u_name in ipairs(self.all_units_sorted) do
+        local val = (self.unit_stat_cache[u_name] and self.unit_stat_cache[u_name][key]) or 1
+        table.insert(stat_vals, val)
+      end
+      table.sort(stat_vals, function(a, b) return a < b end)
+
+      local min_sum = 0
+      for i = 1, math.min(K, #stat_vals) do
+        min_sum = min_sum + stat_vals[i]
+      end
+      min_bench[key] = min_sum
+
+      table.sort(stat_vals, function(a, b) return a > b end)
+      local max_sum = 0
+      for i = 1, math.min(K, #stat_vals) do
+        max_sum = max_sum + stat_vals[i]
+      end
+
+      local class_mults = {}
+      for _, c in ipairs(self.all_classes) do
+        if class_stat_multipliers[c] then
+          local m = class_stat_multipliers[c]
+          local mult_val = 1
+          if key == 'area' then
+            mult_val = (m.area_dmg or 1) * (m.area_size or 1)
+          else
+            mult_val = m[key] or 1
+          end
+          if mult_val > 1 then
+            table.insert(class_mults, mult_val)
+          end
+        end
+      end
+      table.sort(class_mults, function(a, b) return a > b end)
+      local max_syn = 1
+      for i = 1, math.min(K, #class_mults) do
+        max_syn = max_syn * class_mults[i]
+      end
+
+      max_bench[key] = max_sum * max_syn
     end
-    max_bench[stat] = bench
   end
 
   local stats_data = {}
-  local stat_keys = {'hp', 'dmg', 'aspd', 'area', 'def', 'spd'}
   for _, key in ipairs(stat_keys) do
     local c_val = curr[key]
-    local m_val = max_bench[key] or 1
+    local min_val = min_bench[key] or 0
+    local max_val = max_bench[key] or 1
+
     local eff = 0
-    if #planned == 0 then
-      eff = 0
-    elseif m_val <= 1 then
-      eff = (c_val >= 1) and 100 or 0
+    if max_val <= min_val then
+      eff = (c_val >= min_val) and 100 or 0
     else
-      eff = math.min(100, math.max(0, math.floor((c_val / m_val) * 100)))
+      eff = math.floor(((c_val - min_val) / (max_val - min_val)) * 100)
+      eff = math.min(100, math.max(0, eff))
     end
 
     local comment = "No Synergy Buff"
-    if #planned == 0 then
-      comment = "Empty Team"
-    elseif eff >= 100 then
+    if eff >= 100 then
       comment = "Optimal Synergy!"
     elseif eff >= 75 then
       comment = "Strong Synergy"
@@ -483,7 +650,7 @@ function WikiScreen:calculate_team_stat_benchmarks()
 
     stats_data[key] = {
       current = c_val,
-      max_bench = m_val,
+      max_bench = max_val,
       efficiency = eff,
       comment = comment
     }
@@ -717,15 +884,11 @@ end
 
 function WikiUnitCard:draw()
   graphics.push(self.x, self.y, 0, self.spring.x, self.spring.y)
-    local unit_in_plan = main:get_planned_unit(self.character)
-    local in_team = unit_in_plan ~= nil
     local char_color = character_colors[self.character] or fg[0]
 
     graphics.rectangle(self.x, self.y, self.w, self.h, 3, 3, char_color)
 
-    if in_team then
-      graphics.rectangle(self.x, self.y, self.w, self.h, 3, 3, yellow[0], 2)
-    elseif self.selected then
+    if self.selected then
       graphics.rectangle(self.x, self.y, self.w, self.h, 3, 3, fg[0], 1)
     end
 
@@ -1082,8 +1245,8 @@ function WikiStatGauge:draw()
       graphics.rectangle(fill_x, self.y, fill_w, 4, 1, 1, self.color)
     end
 
-    -- Right: Multiplier text (1.4x)
-    local mult_str = string.format('%.1fx', curr_val)
+    -- Right: Multiplier text / stat value
+    local mult_str = (curr_val >= 10) and string.format('%.0f', curr_val) or string.format('%.1fx', curr_val)
     graphics.print(mult_str, pixul_font, self.x + 42, self.y, 0, 1, 1, 0, pixul_font.h/2, fg[0])
   graphics.pop()
 end
@@ -1100,18 +1263,18 @@ function WikiStatGauge:on_mouse_enter()
   end
 
   local benchmarks = self.parent and self.parent:calculate_team_stat_benchmarks()
-  local data = benchmarks and benchmarks[self.stat_key] or { current = 1, max_bench = 1, efficiency = 0, comment = "No Synergy Buff" }
+  local data = benchmarks and benchmarks[self.stat_key] or { current = 0, max_bench = 1, efficiency = 0, comment = "No Synergy Buff" }
 
   self.info_text = InfoText{group = main.current.ui}
   local stat_title = self.label .. ' Synergy Performance'
-  local curr_str = string.format('%.2fx', data.current or 1)
-  local max_str = string.format('%.2fx', data.max_bench or 1)
+  local curr_str = (data.current >= 10) and string.format('%.0f', data.current) or string.format('%.2fx', data.current)
+  local max_str = (data.max_bench >= 10) and string.format('%.0f', data.max_bench) or string.format('%.2fx', data.max_bench)
   local eff_str = tostring(data.efficiency or 0) .. '%'
   local comment_str = data.comment or "No Synergy Buff"
 
   self.info_text:activate({
     {text = '[' .. self.color_name .. ']' .. stat_title, font = pixul_font, alignment = 'center', height_multiplier = 1.2},
-    {text = '[fg]Current Multiplier: [' .. self.color_name .. ']' .. curr_str .. ' [fg]| Max Benchmark: [yellow]' .. max_str, font = pixul_font, alignment = 'center', height_multiplier = 1.2},
+    {text = '[fg]Current: [' .. self.color_name .. ']' .. curr_str .. ' [fg]| Max Benchmark: [yellow]' .. max_str, font = pixul_font, alignment = 'center', height_multiplier = 1.2},
     {text = '[fg]Team Efficiency: [yellow]' .. eff_str .. ' [fg](' .. comment_str .. ')', font = pixul_font, alignment = 'center'},
   }, nil, nil, nil, nil, 16, 4, nil, 2)
   self.info_text.x, self.info_text.y = gw/2, gh/2 + 10
