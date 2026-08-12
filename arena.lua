@@ -872,8 +872,8 @@ function Arena:die()
         if self.transitioning then return end
         self.transitioning = true
         input.m1.pressed = false
-        local retry_units = Table.copy(self.units or {})
-        local retry_passives = Table.copy(self.passives or {})
+        local retry_units = table.copy(self.units or {})
+        local retry_passives = table.copy(self.passives or {})
         local retry_gold = gold
         local retry_shop_level = self.shop_level
         local retry_shop_xp = self.shop_xp
